@@ -18,10 +18,8 @@ public class SpellbookUI : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     public List<Image> lightningAmmoDots;
     public Button attackButton;
 
-    [Header("Equation Cooldown Settings (Seconds)")]
+    [Header("Fire Cooldown Settings (Seconds)")]
     public float fireCooldownTime = 10.0f;
-    public float waterCooldownTime = 6.0f;
-    public float lightningCooldownTime = 3.0f;
 
     [Header("Wrong Answer Penalty Settings")]
     public int wrongAnswerDamage = 10;
@@ -29,16 +27,19 @@ public class SpellbookUI : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     [Header("Equation Cooldown Visuals")]
     public Image dialCooldownFillOverlay;
 
-    // Cooldown state tracking per spell type
+    // Fire dial cooldown tracking
     private float fireCooldownTimer = 0f;
-    private float waterCooldownTimer = 0f;
-    private float lightningCooldownTimer = 0f;
+
+    [Header("Rune Inventory Queues")]
+    // Tracks stored single-use equations for picked-up runes
+    private Queue<MathEquationGenerator.EquationData> waterRuneQueue = new Queue<MathEquationGenerator.EquationData>();
+    private Queue<MathEquationGenerator.EquationData> lightningRuneQueue = new Queue<MathEquationGenerator.EquationData>();
+
+    // Current Fire Problem (Permanent)
+    private MathEquationGenerator.EquationData currentFireEquation;
 
     [Header("Dependencies")]
     public MathEquationGenerator equationGenerator;
-
-    private Dictionary<SpellType, MathEquationGenerator.EquationData> activePages
-        = new Dictionary<SpellType, MathEquationGenerator.EquationData>();
 
     private SpellType currentSpellType = SpellType.Fire;
     private Vector2 touchStartPos;
@@ -46,9 +47,8 @@ public class SpellbookUI : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 
     void Start()
     {
-        activePages[SpellType.Fire] = equationGenerator.GenerateProblem(SpellType.Fire);
-        activePages[SpellType.Water] = equationGenerator.GenerateProblem(SpellType.Water);
-        activePages[SpellType.Lightning] = equationGenerator.GenerateProblem(SpellType.Lightning);
+        // Generate initial permanent Fire addition problem
+        currentFireEquation = equationGenerator.GenerateProblem(SpellType.Fire);
 
         for (int i = 0; i < quadrantButtons.Count; i++)
         {
@@ -66,94 +66,178 @@ public class SpellbookUI : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 
     void Update()
     {
-        HandleCooldowns();
+        HandleFireCooldown();
     }
 
-    private void HandleCooldowns()
+    private void HandleFireCooldown()
     {
         if (fireCooldownTimer > 0)
         {
             fireCooldownTimer -= Time.deltaTime;
-            if (fireCooldownTimer <= 0) OnCooldownComplete(SpellType.Fire);
-        }
-
-        if (waterCooldownTimer > 0)
-        {
-            waterCooldownTimer -= Time.deltaTime;
-            if (waterCooldownTimer <= 0) OnCooldownComplete(SpellType.Water);
-        }
-
-        if (lightningCooldownTimer > 0)
-        {
-            lightningCooldownTimer -= Time.deltaTime;
-            if (lightningCooldownTimer <= 0) OnCooldownComplete(SpellType.Lightning);
-        }
-
-        UpdateDialState();
-    }
-
-    private void OnCooldownComplete(SpellType type)
-    {
-        activePages[type] = equationGenerator.GenerateProblem(type);
-        if (currentSpellType == type)
-        {
-            UpdateBookUI();
-        }
-    }
-
-    public void UpdateBookUI()
-    {
-        MathEquationGenerator.EquationData currentEq = activePages[currentSpellType];
-
-        if (spellTypeTitleText != null)
-            spellTypeTitleText.text = $"{currentSpellType.ToString().ToUpper()} SPELL";
-
-        equationDisplayText.text = IsCurrentSpellOnCooldown() ? "RECHARGING DIAL..." : currentEq.questionText;
-
-        for (int i = 0; i < 4; i++)
-        {
-            if (i < quadrantTexts.Count)
+            if (fireCooldownTimer <= 0)
             {
-                quadrantTexts[i].text = currentEq.dialOptions[i].ToString();
+                // Generate a fresh Fire equation when cooldown ends
+                currentFireEquation = equationGenerator.GenerateProblem(SpellType.Fire);
+                if (currentSpellType == SpellType.Fire) UpdateBookUI();
             }
         }
 
         UpdateDialState();
     }
 
+    // Called by RunePickup.cs when player walks over a rune in the stage
+    public void AddRuneToInventory(SpellType type)
+    {
+        MathEquationGenerator.EquationData newEq = equationGenerator.GenerateProblem(type);
+
+        if (type == SpellType.Water)
+        {
+            waterRuneQueue.Enqueue(newEq);
+        }
+        else if (type == SpellType.Lightning)
+        {
+            lightningRuneQueue.Enqueue(newEq);
+        }
+
+        UpdateBookUI();
+    }
+
+    public void UpdateBookUI()
+    {
+        if (spellTypeTitleText != null)
+            spellTypeTitleText.text = $"{currentSpellType.ToString().ToUpper()} SPELL";
+
+        // Check availability per spell type
+        if (currentSpellType == SpellType.Fire)
+        {
+            if (fireCooldownTimer > 0)
+            {
+                SetDialText("RECHARGING DIAL...", "", "", "", "");
+            }
+            else
+            {
+                DisplayEquation(currentFireEquation);
+            }
+        }
+        else if (currentSpellType == SpellType.Water)
+        {
+            if (waterRuneQueue.Count > 0)
+            {
+                DisplayEquation(waterRuneQueue.Peek());
+            }
+            else
+            {
+                SetDialText($"NO WATER RUNES ({waterRuneQueue.Count})", "-", "-", "-", "-");
+            }
+        }
+        else if (currentSpellType == SpellType.Lightning)
+        {
+            if (lightningRuneQueue.Count > 0)
+            {
+                DisplayEquation(lightningRuneQueue.Peek());
+            }
+            else
+            {
+                SetDialText($"NO LIGHTNING RUNES ({lightningRuneQueue.Count})", "-", "-", "-", "-");
+            }
+        }
+
+        UpdateDialState();
+    }
+
+    private void DisplayEquation(MathEquationGenerator.EquationData eq)
+    {
+        equationDisplayText.text = eq.questionText;
+        for (int i = 0; i < 4; i++)
+        {
+            if (i < quadrantTexts.Count)
+            {
+                quadrantTexts[i].text = eq.dialOptions[i].ToString();
+            }
+        }
+    }
+
+    private void SetDialText(string question, string q1, string q2, string q3, string q4)
+    {
+        equationDisplayText.text = question;
+        string[] opts = { q1, q2, q3, q4 };
+        for (int i = 0; i < 4; i++)
+        {
+            if (i < quadrantTexts.Count) quadrantTexts[i].text = opts[i];
+        }
+    }
+
     private void OnQuadrantSelected(int index)
     {
-        if (IsCurrentSpellOnCooldown()) return;
+        // Fire Cooldown Check
+        if (currentSpellType == SpellType.Fire && fireCooldownTimer > 0) return;
 
-        MathEquationGenerator.EquationData currentEq = activePages[currentSpellType];
+        // Check if Rune exists for Water or Lightning
+        if (currentSpellType == SpellType.Water && waterRuneQueue.Count == 0) return;
+        if (currentSpellType == SpellType.Lightning && lightningRuneQueue.Count == 0) return;
+
+        // Fetch active equation
+        MathEquationGenerator.EquationData currentEq = currentSpellType switch
+        {
+            SpellType.Fire => currentFireEquation,
+            SpellType.Water => waterRuneQueue.Peek(),
+            SpellType.Lightning => lightningRuneQueue.Peek(),
+            _ => default
+        };
+
         int selectedValue = currentEq.dialOptions[index];
 
         if (selectedValue == currentEq.correctAnswer)
         {
-            Debug.Log($"Correct! Adding +1 Ammo to {currentSpellType}!");
+            Debug.Log($"Correct! +1 Ammo to {currentSpellType}");
 
+            // Add Ammo to Player
             PlayerMagicNetwork localPlayer = GetLocalPlayerMagic();
             if (localPlayer != null)
             {
                 localPlayer.AddSpellAmmo(currentSpellType, 1);
             }
 
-            StartCooldownForCurrentSpell();
+            // Consume or trigger cooldown
+            if (currentSpellType == SpellType.Fire)
+            {
+                fireCooldownTimer = fireCooldownTime; // Trigger Fire Cooldown
+            }
+            else if (currentSpellType == SpellType.Water)
+            {
+                waterRuneQueue.Dequeue(); // Consume 1 Water Rune
+            }
+            else if (currentSpellType == SpellType.Lightning)
+            {
+                lightningRuneQueue.Dequeue(); // Consume 1 Lightning Rune
+            }
+
             UpdateBookUI();
         }
         else
         {
-            Debug.Log($"Wrong Answer! Player takes {wrongAnswerDamage} self-damage!");
+            Debug.Log($"Wrong Answer! Self-damage penalty applied.");
 
-            // Take self damage via ServerRpc
             PlayerHealth localHealth = GetLocalPlayerHealth();
             if (localHealth != null)
             {
                 localHealth.TakeDamageServerRpc(wrongAnswerDamage);
             }
 
-            // Generate new problem on wrong answer
-            activePages[currentSpellType] = equationGenerator.GenerateProblem(currentSpellType);
+            // Consume rune on wrong answer or re-roll Fire problem
+            if (currentSpellType == SpellType.Fire)
+            {
+                currentFireEquation = equationGenerator.GenerateProblem(SpellType.Fire);
+            }
+            else if (currentSpellType == SpellType.Water && waterRuneQueue.Count > 0)
+            {
+                waterRuneQueue.Dequeue(); // Burn rune on mistake
+            }
+            else if (currentSpellType == SpellType.Lightning && lightningRuneQueue.Count > 0)
+            {
+                lightningRuneQueue.Dequeue(); // Burn rune on mistake
+            }
+
             UpdateBookUI();
         }
     }
@@ -164,80 +248,44 @@ public class SpellbookUI : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         if (localPlayer != null)
         {
             localPlayer.CastSpell(currentSpellType);
-            UpdateDialState(); // Re-evaluate attack button interactability
+            UpdateDialState();
         }
-    }
-
-    private void StartCooldownForCurrentSpell()
-    {
-        switch (currentSpellType)
-        {
-            case SpellType.Fire:
-                fireCooldownTimer = fireCooldownTime;
-                break;
-            case SpellType.Water:
-                waterCooldownTimer = waterCooldownTime;
-                break;
-            case SpellType.Lightning:
-                lightningCooldownTimer = lightningCooldownTime;
-                break;
-        }
-    }
-
-    private bool IsCurrentSpellOnCooldown()
-    {
-        return currentSpellType switch
-        {
-            SpellType.Fire => fireCooldownTimer > 0,
-            SpellType.Water => waterCooldownTimer > 0,
-            SpellType.Lightning => lightningCooldownTimer > 0,
-            _ => false
-        };
     }
 
     private void UpdateDialState()
     {
-        float currentTimer = currentSpellType switch
+        bool hasRuneOrActive = currentSpellType switch
         {
-            SpellType.Fire => fireCooldownTimer,
-            SpellType.Water => waterCooldownTimer,
-            SpellType.Lightning => lightningCooldownTimer,
-            _ => 0f
+            SpellType.Fire => fireCooldownTimer <= 0,
+            SpellType.Water => waterRuneQueue.Count > 0,
+            SpellType.Lightning => lightningRuneQueue.Count > 0,
+            _ => false
         };
 
-        float maxCooldown = currentSpellType switch
-        {
-            SpellType.Fire => fireCooldownTime,
-            SpellType.Water => waterCooldownTime,
-            SpellType.Lightning => lightningCooldownTime,
-            _ => 1f
-        };
-
-        bool isOnCooldown = currentTimer > 0;
-
-        // Enable or disable math answer buttons based on cooldown
+        // Enable or disable dial buttons
         for (int i = 0; i < quadrantButtons.Count; i++)
         {
             if (quadrantButtons[i] != null)
             {
-                quadrantButtons[i].interactable = !isOnCooldown;
+                quadrantButtons[i].interactable = hasRuneOrActive;
             }
         }
 
-        // Check if player currently has ammo for the selected element
+        // Enable attack button if local player has ammo
         PlayerMagicNetwork localPlayer = GetLocalPlayerMagic();
         bool hasAmmo = localPlayer != null && localPlayer.HasAmmo(currentSpellType);
 
         if (attackButton != null)
         {
-            // Attack button requires ammo to be enabled
             attackButton.interactable = hasAmmo;
         }
 
+        // Radial fill overlay for Fire cooldown
         if (dialCooldownFillOverlay != null)
         {
-            dialCooldownFillOverlay.enabled = isOnCooldown;
-            dialCooldownFillOverlay.fillAmount = isOnCooldown ? (currentTimer / maxCooldown) : 0f;
+            bool isFireCooldown = currentSpellType == SpellType.Fire && fireCooldownTimer > 0;
+            dialCooldownFillOverlay.enabled = isFireCooldown;
+            dialCooldownFillOverlay.fillAmount = isFireCooldown ? (fireCooldownTimer / fireCooldownTime) : 0f;
         }
     }
 
@@ -258,11 +306,10 @@ public class SpellbookUI : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
             if (i < currentCount)
             {
                 dots[i].enabled = true;
-                dots[i].color = Color.white; // Active Dot
+                dots[i].color = Color.white;
             }
             else
             {
-                // Empty dot opacity
                 dots[i].enabled = true;
                 dots[i].color = new Color(1f, 1f, 1f, 0.2f);
             }

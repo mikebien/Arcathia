@@ -12,7 +12,7 @@ public class PlayerController : NetworkBehaviour
     public float jumpSpeed = 8.0f;
     public float baseGravity = -9.81f;
     public float jumpGravityMultiplier = 1.0f;
-    public float fallGravityMultiplier = 2.0f;
+    public float fallGravityMultiplier = 1.2f; // Reduced from 2.0f to prevent physics clipping
     public float maxFallSpeed = 25.0f;
 
     [Header("Camera Settings")]
@@ -50,6 +50,9 @@ public class PlayerController : NetworkBehaviour
     {
         if (!IsOwner) return;
 
+        // GUARD: If controller is disabled (e.g. during teleport), halt movement processing
+        if (controller == null || !controller.enabled) return;
+
         HandleMovement();
         HandleCameraLook();
     }
@@ -60,7 +63,7 @@ public class PlayerController : NetworkBehaviour
 
         if (isGrounded && velocity.y < 0)
         {
-            velocity.y = -2f;
+            velocity.y = -2f; // Ground stick force
         }
 
         float moveX = 0f;
@@ -139,5 +142,13 @@ public class PlayerController : NetworkBehaviour
         {
             velocity.y = jumpSpeed;
         }
+    }
+
+    /// <summary>
+    /// Resets fall speed when teleporting to prevent accumulated gravity from clipping the floor.
+    /// </summary>
+    public void ResetVelocity()
+    {
+        velocity = Vector3.zero;
     }
 }

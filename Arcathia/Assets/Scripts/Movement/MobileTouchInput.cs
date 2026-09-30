@@ -29,8 +29,8 @@ public class MobileTouchInput : MonoBehaviour
         }
 
         var touches = touchscreen.touches;
-        bool moveTouchActive = false;
-        bool lookTouchActive = false;
+        bool moveTouchFoundThisFrame = false;
+        bool lookTouchFoundThisFrame = false;
 
         for (int i = 0; i < touches.Count; i++)
         {
@@ -43,13 +43,14 @@ public class MobileTouchInput : MonoBehaviour
             var phase = touch.phase.ReadValue();
 
             // -------------------------------------------------------------
-            // 1. Process Active Left-Side Movement Touch
+            // 1. Process Active Movement Touch
             // -------------------------------------------------------------
             if (fingerId == moveTouchId)
             {
+                moveTouchFoundThisFrame = true;
+
                 if (phase == UnityEngine.InputSystem.TouchPhase.Moved || phase == UnityEngine.InputSystem.TouchPhase.Stationary)
                 {
-                    moveTouchActive = true;
                     Vector2 offset = position - moveStartPosition;
                     MoveInput = Vector2.ClampMagnitude(offset / maxDragDistance, 1f);
                 }
@@ -62,13 +63,14 @@ public class MobileTouchInput : MonoBehaviour
             }
 
             // -------------------------------------------------------------
-            // 2. Process Active Right-Side Camera Look Touch
+            // 2. Process Active Camera Look Touch
             // -------------------------------------------------------------
             if (fingerId == lookTouchId)
             {
+                lookTouchFoundThisFrame = true;
+
                 if (phase == UnityEngine.InputSystem.TouchPhase.Moved)
                 {
-                    lookTouchActive = true;
                     LookInput = delta;
                 }
                 else if (phase == UnityEngine.InputSystem.TouchPhase.Ended || phase == UnityEngine.InputSystem.TouchPhase.Canceled)
@@ -79,12 +81,12 @@ public class MobileTouchInput : MonoBehaviour
             }
 
             // -------------------------------------------------------------
-            // 3. Register New Touches
+            // 3. Register New Touches (Began Phase)
             // -------------------------------------------------------------
             if (phase == UnityEngine.InputSystem.TouchPhase.Began)
             {
-                // Skip if touch starts on UI buttons (Jump, Skill, Pause, etc.)
-                if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(fingerId))
+                // FIX 1: Correct UI Pointer Over check for New Input System
+                if (IsTouchOverUI(fingerId))
                 {
                     continue;
                 }
@@ -94,29 +96,53 @@ public class MobileTouchInput : MonoBehaviour
                 {
                     moveTouchId = fingerId;
                     moveStartPosition = position;
-                    moveTouchActive = true;
+                    moveTouchFoundThisFrame = true;
                 }
                 // Right 50% -> Camera Look
                 else if (position.x > Screen.width * 0.5f && lookTouchId == -1)
                 {
                     lookTouchId = fingerId;
-                    lookTouchActive = true;
+                    lookTouchFoundThisFrame = true;
+
+                    // Capture delta if moving on frame 1
+                    if (delta != Vector2.zero)
+                    {
+                        LookInput = delta;
+                    }
                 }
             }
         }
 
-        // Safety Catch: If registered move touch finger disappeared, force zero
-        if (moveTouchId != -1 && !moveTouchActive)
+        // Safety Cleanups: Only reset if the finger completely disappeared from input buffer
+        if (moveTouchId != -1 && !moveTouchFoundThisFrame)
         {
             moveTouchId = -1;
             MoveInput = Vector2.zero;
         }
 
-        // Safety Catch: If registered look touch finger disappeared, clear ID
-        if (lookTouchId != -1 && !lookTouchActive)
+        if (lookTouchId != -1 && !lookTouchFoundThisFrame)
         {
             lookTouchId = -1;
+            LookInput = Vector2.zero;
         }
+    }
+
+    /// <summary>
+    /// Checks if a touch finger is over a UI Graphic element (New Input System compatible).
+    /// </summary>
+    private bool IsTouchOverUI(int fingerId)
+    {
+        if (EventSystem.current == null) return false;
+
+        PointerEventData eventData = new PointerEventData(EventSystem.current)
+        {
+            position = Touchscreen.current.touches[fingerId].position.ReadValue()
+        };
+
+        var results = new System.Collections.Generic.List<RaycastResult>();
+        EventSystem.current.RaycastAll(eventData, results);
+
+        return results.Count > 0;
     }
 
     private void ResetAllInputs()
