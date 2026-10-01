@@ -16,7 +16,7 @@ public class ShopUIManager : MonoBehaviour
     public GameObject slotPrefab;
     public Button actionButton;
     public TextMeshProUGUI actionButtonText;
-    public Button playButton;
+    public Button backToMenuButton; // Renamed from playButton
 
     [Header("3D Preview Holders")]
     public Transform hatHolder;
@@ -35,33 +35,29 @@ public class ShopUIManager : MonoBehaviour
         RefreshPreviewModel();
         PopulateGrid(currentCategory);
 
-        playButton.onClick.AddListener(() => SceneManager.LoadScene("NetworkTestScene"));
+        // Link back to main menu
+        backToMenuButton.onClick.AddListener(() => SceneManager.LoadScene("MainMenu"));
         actionButton.onClick.AddListener(OnActionClicked);
     }
 
-    void Update()
+    // --- NEW MOBILE PROTOTYPE METHODS ---
+    public void AddPrototypeMoney()
     {
-        if (Input.GetKeyDown(KeyCode.M))
-        {
-            saveData.currency += 500;
-            SaveManager.SaveData(saveData);
-            UpdateMoneyDisplay();
-            UpdateActionButtonState();
-        }
-        
-        if (Input.GetKeyDown(KeyCode.R))
-        {
-            // This replaces the current data with a brand new, empty save file
-            saveData = new PlayerSaveData(); 
-            
-            SaveManager.SaveData(saveData);
-            UpdateMoneyDisplay();
-            UpdateActionButtonState();
-            RefreshPreviewModel();
-            
-            Debug.Log("Shop data has been reset!");
-        }
+        saveData.currency += 500;
+        SaveManager.SaveData(saveData);
+        UpdateMoneyDisplay();
+        UpdateActionButtonState();
     }
+
+    public void ResetPrototypeData()
+    {
+        saveData = new PlayerSaveData(); 
+        SaveManager.SaveData(saveData);
+        UpdateMoneyDisplay();
+        UpdateActionButtonState();
+        RefreshPreviewModel();
+    }
+    // ------------------------------------
 
     public void SelectCategory(int categoryIndex)
     {
@@ -83,7 +79,6 @@ public class ShopUIManager : MonoBehaviour
             if (item.category == category)
             {
                 GameObject slot = Instantiate(slotPrefab, itemGrid);
-                
                 slot.transform.GetChild(0).GetComponent<Image>().sprite = item.icon;
                 
                 Button btn = slot.GetComponent<Button>();
@@ -107,17 +102,11 @@ public class ShopUIManager : MonoBehaviour
         string currentEquipped = GetEquippedIdForCategory(selectedItem.category);
 
         if (!isUnlocked)
-        {
             actionButtonText.text = "$" + selectedItem.price + " BUY";
-        }
         else if (currentEquipped == selectedItem.itemID)
-        {
             actionButtonText.text = "UNEQUIP";
-        }
         else
-        {
             actionButtonText.text = "EQUIP";
-        }
     }
 
     void OnActionClicked()
@@ -176,10 +165,7 @@ public class ShopUIManager : MonoBehaviour
         }
     }
 
-    private void UpdateMoneyDisplay()
-    {
-        moneyText.text = "$" + saveData.currency;
-    }
+    private void UpdateMoneyDisplay() => moneyText.text = "$" + saveData.currency;
 
     private string GetEquippedIdForCategory(CosmeticCategory cat)
     {
